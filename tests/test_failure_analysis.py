@@ -211,7 +211,13 @@ def test_pipeline_result_rejects_forbidden_or_non_scalar_evidence(row, permitted
         pipeline_result(evidence, {})
 
 
-def test_later_phase_orchestration_remains_stub():
+def test_completed_orchestration_preserves_sample_only_boundary():
     from redqueen.pipeline import run_redqueen
-    with pytest.raises(NotImplementedError, match="Phase 5"):
-        run_redqueen("scenario", Settings())
+    from redqueen.gemma_client import MissingApiKeyError
+    with pytest.raises(MissingApiKeyError):
+        run_redqueen("scenario", Settings(), "live")
+    result = run_redqueen("GiftCardNightBurst", Settings(), "replay")
+    assert result.report.verdict == "ACCEPTED"
+    assert not any(isinstance(getattr(result, item.name), pd.DataFrame) for item in fields(result))
+    assert result.evidence.permitted_fields == list(ALLOWED_FIELDS)
+    assert all(set(row).issubset(ALLOWED_FIELDS) for row in result.evidence.missed_fraud)

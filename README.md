@@ -166,3 +166,11 @@ Run the computed offline benchmark:
 ```powershell
 .venv\Scripts\python.exe benchmarks/run_benchmark.py --mode replay --seed 1337 --scenarios all
 ```
+
+## Dashboard (Phase 5)
+
+Run .venv\Scripts\python.exe -m streamlit run app.py. The dashboard defaults to
+Offline Replay and never calls the API on startup. Use seed 1337 and GiftCardNightBurst
+for an accepted rule, then HighAmountGeoMismatch for a rejected rule. Accepted rules persist
+in session memory until Reset sandbox. Last-run reports survive reruns without re-evaluation.
+Live errors offer an explicit Switch to Offline Replay action. No silent fallback occurs.

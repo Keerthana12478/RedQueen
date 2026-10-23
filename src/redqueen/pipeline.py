@@ -10,6 +10,8 @@ INVARIANTS:
 """
 from __future__ import annotations
 
+import time
+from uuid import uuid4
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -67,7 +69,7 @@ class SimulationBoundary:
 
     def evaluate_final(
         self, gate: VerificationGate, rule: DefenseRule, baseline: BaselineDetector,
-        approved_attacks: list[str],
+        approved_attacks: list[AttackSpec],
     ) -> VerificationReport:
         """Transfer the sealed capability only to the final gate method.
 
@@ -114,6 +116,28 @@ class PipelineResult:
     dataset_metadata: dict = field(default_factory=dict)
     """Shape / split-size metadata (counts only, no raw rows)."""
 
+    scenario: str = ""
+    seed: int = 1337
+    run_id: str = ""
+    validation_feedback: list[ValidationFeedback] = field(default_factory=list)
+    stage_timings_ms: dict[str, float] = field(default_factory=dict)
+    step_telemetry: list[RunTelemetry] = field(default_factory=list)
+    validation_retries: int = 0
+    active_rule_count: int = 0
+
+    def to_dict(self) -> dict:
+        """Explicit JSON contract: no settings, credentials or raw held-out frames."""
+        return {
+            "scenario": self.scenario, "seed": self.seed, "run_id": self.run_id,
+            "spec": self.spec.model_dump(mode="json"), "rule": self.rule.model_dump(mode="json"),
+            "report": self.report.model_dump(mode="json"), "telemetry": self.telemetry.model_dump(mode="json"),
+            "evidence": self.evidence.model_dump(mode="json"), "dataset_metadata": self.dataset_metadata,
+            "validation_feedback": [f.model_dump(mode="json") for f in self.validation_feedback],
+            "stage_timings_ms": self.stage_timings_ms,
+            "step_telemetry": [t.model_dump(mode="json") for t in self.step_telemetry],
+            "validation_retries": self.validation_retries, "active_rule_count": self.active_rule_count,
+        }
+
     def __post_init__(self) -> None:
         _validate_metadata(self.dataset_metadata)
         allowed = set(self.evidence.permitted_fields)
@@ -128,32 +152,81 @@ class PipelineResult:
         self.evidence.model_dump_json()
 
 
-def run_redqueen(
-    scenario: str,
-    settings: Settings,
-    mode: str | None = None,
-) -> PipelineResult:
-    """Run the full RedQueen pipeline end-to-end.
+class PipelineError(RuntimeError):
+    """Named internal stage failure without underlying data or secrets."""
+    def __init__(self, stage: str):
+        self.stage = stage
+        super().__init__(f"Pipeline stage failed: {stage}")
 
-    Steps (orchestrated here; each step is implemented in its own module):
-    1. Generate or load :class:`~redqueen.schemas.AttackSpec` (attack_lab).
-    2. Synthesise datasets (simulator).
-    3. Fit and run baseline detector (baseline).
-    4. Build failure-analysis evidence from sample split (failure_analysis).
-    5. Propose defense rule via Gemma (defender_forge).
-    6. Validate on validation split; optionally retry (verification).
-    7. Final sealed evaluation (verification).
-    8. Return :class:`PipelineResult`.
 
-    Args:
-        scenario: Natural-language fraud scenario description.
-        settings: Application settings.
-        mode: Override for ``settings.mode`` (``"live"`` or ``"replay"``).
+def run_redqueen(scenario: str, settings: Settings, mode: str | None = None,
+                 *, client=None, sandbox=None, on_stage=None) -> PipelineResult:
+    """Shared CLI/UI flow: bounded proposals, one revision, one final evaluation."""
+    from redqueen.attack_lab import _sanitize_scenario, generate_attack_spec
+    from redqueen.defender_forge import propose_rule
+    from redqueen.gemma_client import GemmaApiError, GemmaClient, MissingApiKeyError, resolve_mode
+    from redqueen.verification import SandboxState, VerificationGate
 
-    Returns:
-        A :class:`PipelineResult` with all outputs.
+    clean = _sanitize_scenario(scenario)
+    requested = mode if mode is not None else settings.mode
+    if requested not in {"live", "replay"}:
+        raise ValueError("Mode must be live or replay")
+    settings = settings.model_copy(update={"mode": requested})
+    actual_mode = resolve_mode(settings)
+    state = sandbox if sandbox is not None else SandboxState()
+    run_id = uuid4().hex
+    timings = {}
+    telemetry = []
 
-    Raises:
-        NotImplementedError: Until Phase 5 is implemented.
-    """
-    raise NotImplementedError("run_redqueen: implemented in Phase 5")
+    def stage(name, operation):
+        if on_stage is not None:
+            on_stage(name)
+        started = time.perf_counter()
+        try:
+            return operation()
+        except (GemmaApiError, MissingApiKeyError):
+            raise
+        except Exception:
+            raise PipelineError(name) from None
+        finally:
+            timings[name] = (time.perf_counter()-started)*1000
+
+    if actual_mode == "live" and client is None:
+        client = stage("Live API initialization", lambda: GemmaClient(settings))
+    spec, attack_telemetry = stage("Attack Lab", lambda: generate_attack_spec(clean, client, actual_mode))
+    telemetry.append(attack_telemetry)
+    simulation = stage("Synthetic simulator", lambda: SimulationBoundary(spec, settings.seed, settings))
+    baseline = BaselineDetector()
+    evidence_detector = BaselineDetector()
+    evidence_detector.rules.extend(state.active_rules)
+    evidence = stage("Baseline failure evidence", lambda: simulation.build_sample_evidence(evidence_detector))
+    gate = VerificationGate(settings, spec, active_rules=state.active_rules, run_id=run_id)
+
+    def forge(feedback):
+        rule, step = propose_rule(evidence, client, actual_mode, feedback,
+                                  replay_scenario=attack_telemetry.replay_scenario)
+        telemetry.append(step)
+        return rule
+
+    rule = stage("Defender Forge", lambda: forge(None))
+    feedback = stage("Validation gate", lambda: simulation.evaluate_validation(gate, rule, baseline))
+    feedbacks = [feedback]
+    retry = settings.max_validation_retries > 0 and (
+        feedback.recall_gain_bucket == "none" or feedback.fpr_exceeded or feedback.segment_violation)
+    if retry:
+        rule = stage("Defender Forge revision", lambda: forge(feedback))
+        feedbacks.append(stage("Validation revision", lambda: simulation.evaluate_validation(gate, rule, baseline)))
+    report = stage("Sealed verification (once)", lambda: simulation.evaluate_final(gate, rule, baseline, state.approved_attacks))
+    if report.verdict == "ACCEPTED":
+        stage("Sandbox activation", lambda: state.activate(rule, report, spec=spec))
+    else:
+        state.audit.append(report.model_dump(mode="json"))
+    models = list(dict.fromkeys(t.model_used for t in telemetry if t.model_used))
+    total = RunTelemetry(mode=actual_mode, model_used=", ".join(models) or None,
+        model_latency_ms=sum(t.model_latency_ms or 0 for t in telemetry) if actual_mode=="live" else None,
+        verification_latency_ms=report.latency_ms, attempts=sum(t.attempts for t in telemetry),
+        replay_scenario=attack_telemetry.replay_scenario, replay_match=attack_telemetry.replay_match)
+    return PipelineResult(spec=spec, rule=rule, report=report, telemetry=total, evidence=evidence,
+        dataset_metadata=simulation.metadata, scenario=clean, seed=settings.seed, run_id=run_id,
+        validation_feedback=feedbacks, stage_timings_ms=timings, step_telemetry=telemetry,
+        validation_retries=int(retry), active_rule_count=len(state.active_rules))
