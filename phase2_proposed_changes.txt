@@ -1,0 +1,511 @@
+PHASE 2 PROPOSED SOURCE IMPLEMENTATION — REVIEW ONLY
+
+These proposed contents have NOT been applied to the source files.
+Phase 1 baseline: 41 passed in 0.44s (Python 3.14.7).
+The proposed Phase 2 code has not yet been executed or tested.
+This review contains all five proposed source files in full; Phase 2 tests and
+documentation updates remain pending implementation approval.
+
+================================================================================
+BEGIN FILE: src/redqueen/simulator.py
+================================================================================
+"""Reproducible synthetic transactions; no model calls or held-out evaluation.
+
+Split roots are seed, seed+1 and seed+2. Each root draws separate child seeds
+for legitimate and fraudulent rows, then shuffles with its own default_rng.
+Only the Phase 4 gate may consume sealed rows outside generator contract tests.
+"""
+from __future__ import annotations
+
+import numpy as np
+import pandas as pd
+
+from redqueen.config import Settings
+from redqueen.schemas import ALLOWED_FIELDS, AttackSpec
+
+
+DEFAULT_DEMO_SPEC = AttackSpec(
+    name="GiftCardNightBurst",
+    description="Gift-card transfers near $450 at 2-4 AM, with bursts and young IPs.",
+    target_merchant_categories=["gift_card"],
+    amount_range=(400.0, 500.0),
+    hour_window=[2, 3, 4],
+    velocity_1h_range=(6, 14),
+    account_age_range=(5, 180),
+    ip_age_range=(0, 3),
+    new_device_prob=0.75,
+    geo_mismatch_prob=0.35,
+    fraud_fraction=0.08,
+    evasion_overlap=0.20,
+)
+
+
+def _check_count(n: int) -> None:
+    if isinstance(n, bool) or not isinstance(n, (int, np.integer)) or n < 0:
+        raise ValueError("Row count must be a non-negative integer")
+
+
+def _checked_spec(spec: AttackSpec) -> AttackSpec:
+    # Frozen models still contain mutable lists: revalidate at the boundary.
+    checked = AttackSpec.model_validate(spec.model_dump())
+    if not checked.hour_window or not checked.target_merchant_categories:
+        raise ValueError("Attack hours and merchant categories must be non-empty")
+    if checked.name in {"none", "background", ""}:
+        raise ValueError("Attack name must be non-empty and not a reserved label")
+    if not np.isfinite(checked.amount_range).all():
+        raise ValueError("Attack amounts must be finite")
+    return checked
+
+
+def _typed_features(data: dict | pd.DataFrame) -> pd.DataFrame:
+    frame = pd.DataFrame(data, columns=list(ALLOWED_FIELDS))
+    return frame.astype({
+        name: {"float": "float64", "int": "int64", "str": "object"}[field.dtype]
+        for name, field in ALLOWED_FIELDS.items()
+    })
+
+
+def generate_legit_background(n: int, seed: int) -> pd.DataFrame:
+    """Generate n legitimate feature rows plus is_fraud / attack_name labels.
+
+    Amounts are lognormal (median $40, sigma 1.6). Ordinary hourly velocity is
+    Poisson(0.4); 1.5% are legitimate bursts of 4-16 transactions. Categories,
+    night hours, new devices and young accounts deliberately overlap attacks.
+    """
+    _check_count(n)
+    rng = np.random.default_rng(seed)
+    hours = np.array([1] * 6 + [3] * 3 + [7] * 13 + [3] * 2, dtype=float)
+    velocity = rng.poisson(0.4, n).clip(0, 50)
+    bursts = rng.random(n) < 0.015
+    velocity[bursts] = rng.integers(4, 17, bursts.sum())
+    account_age = rng.gamma(2.0, 400.0, n).clip(30, 5000).astype("int64")
+    young = rng.random(n) < 0.06
+    account_age[young] = rng.integers(0, 30, young.sum())
+    ip_age = rng.gamma(2.0, 240.0, n).clip(7, 3650).astype("int64")
+    young_ip = rng.random(n) < 0.04
+    ip_age[young_ip] = rng.integers(0, 7, young_ip.sum())
+    frame = _typed_features({
+        "amount": rng.lognormal(np.log(40.0), 1.6, n).clip(0, 50_000),
+        "hour_of_day": rng.choice(24, n, p=hours / hours.sum()),
+        "velocity_1h": velocity,
+        "velocity_24h": np.maximum(velocity, rng.poisson(2.5, n)).clip(0, 200),
+        "account_age_days": account_age,
+        "ip_age_days": ip_age,
+        "is_new_device": (rng.random(n) < 0.05).astype("int64"),
+        "geo_mismatch": (rng.random(n) < 0.03).astype("int64"),
+        "amount_ratio_to_avg": rng.lognormal(0.0, 0.65, n).clip(0, 100),
+        "merchant_category": rng.choice(
+            ["grocery", "dining", "utilities", "electronics", "travel",
+             "peer_transfer", "gift_card", "crypto"],
+            n, p=[0.28, 0.24, 0.20, 0.10, 0.07, 0.08, 0.02, 0.01],
+        ),
+        "channel": rng.choice(["web", "mobile", "pos", "atm"], n,
+                              p=[0.25, 0.40, 0.30, 0.05]),
+    })
+    frame["is_fraud"] = np.zeros(n, dtype="int64")
+    frame["attack_name"] = pd.Series(["none"] * n, dtype="object")
+    return frame
+
+
+def generate_fraud(spec: AttackSpec, n: int, seed: int) -> pd.DataFrame:
+    """Generate exactly n fraud rows, including round(1.5% * n) generic rows.
+
+    Target fields are uniform within inclusive integer ranges and uniform over
+    specified categories/hours; probabilities are independent Bernoulli draws.
+    Fields absent from AttackSpec inherit the legitimate distribution, with
+    daily velocity >= hourly velocity and an amount-based ratio. A fraction
+    round(evasion_overlap * target_count) has ALL features replaced by legit
+    draws: these rows are intentionally indistinguishable from legit activity.
+    Generic fraud replaces part of n (it never inflates the fraud fraction).
+    """
+    _check_count(n)
+    spec = _checked_spec(spec)
+    rng = np.random.default_rng(seed)
+    frame = generate_legit_background(n, int(rng.integers(0, 2**63)))
+    frame["amount"] = rng.uniform(*spec.amount_range, n)
+    frame["hour_of_day"] = rng.choice(spec.hour_window, n)
+    frame["velocity_1h"] = rng.integers(
+        spec.velocity_1h_range[0], spec.velocity_1h_range[1] + 1, n)
+    frame["velocity_24h"] = (frame["velocity_1h"].to_numpy()
+                             + rng.poisson(6, n)).clip(0, 200)
+    frame["account_age_days"] = rng.integers(
+        spec.account_age_range[0], spec.account_age_range[1] + 1, n)
+    frame["ip_age_days"] = rng.integers(spec.ip_age_range[0], spec.ip_age_range[1] + 1, n)
+    frame["is_new_device"] = (rng.random(n) < spec.new_device_prob).astype("int64")
+    frame["geo_mismatch"] = (rng.random(n) < spec.geo_mismatch_prob).astype("int64")
+    frame["merchant_category"] = pd.Series(
+        rng.choice(spec.target_merchant_categories, n), dtype="object")
+    frame["amount_ratio_to_avg"] = (
+        frame["amount"].to_numpy() / 40.0 * rng.lognormal(0, 0.3, n)).clip(0, 100)
+    frame["is_fraud"] = np.ones(n, dtype="int64")
+    frame["attack_name"] = pd.Series([spec.name] * n, dtype="object")
+
+    generic_count = round(n * 0.015)
+    order = rng.permutation(n)
+    generic = order[:generic_count]
+    evaders = order[generic_count:generic_count + round(
+        (n - generic_count) * spec.evasion_overlap)]
+    lookalikes = generate_legit_background(len(evaders), int(rng.integers(0, 2**63)))
+    for field in ALLOWED_FIELDS:
+        frame.loc[evaders, field] = lookalikes[field].to_numpy()
+    frame.loc[generic, "amount"] = rng.uniform(6000, 15_000, generic_count)
+    frame.loc[generic, "velocity_1h"] = rng.integers(12, 26, generic_count)
+    frame.loc[generic, "velocity_24h"] = rng.integers(26, 60, generic_count)
+    frame.loc[generic, "attack_name"] = "background"
+    return frame
+
+
+def generate_datasets(
+    spec: AttackSpec,
+    seed: int,
+    settings: Settings,
+) -> dict[str, pd.DataFrame]:
+    """Build isolated splits with roots seed / seed+1 / seed+2.
+
+    IDs have S/V/T prefixes; frames share explicit dtypes, columns, RangeIndex
+    and deterministic shuffled row order. IDs identify rows within this run,
+    not across runs. No global RNG state is read or modified.
+    """
+    spec = _checked_spec(spec)
+    sizes = (settings.n_sample, settings.n_validation, settings.n_sealed)
+    for n in sizes:
+        _check_count(n)
+    datasets = {}
+    for offset, (split, prefix, n) in enumerate(zip(
+        ("sample", "validation", "sealed"), ("S", "V", "T"), sizes, strict=True
+    )):
+        rng = np.random.default_rng(seed + offset)
+        n_fraud = round(n * spec.fraud_fraction)
+        legit_seed, fraud_seed = (int(s) for s in rng.integers(0, 2**63, 2))
+        frame = pd.concat([
+            generate_legit_background(n - n_fraud, legit_seed),
+            generate_fraud(spec, n_fraud, fraud_seed),
+        ], ignore_index=True)
+        frame = frame.iloc[rng.permutation(n)].reset_index(drop=True)
+        frame["txn_id"] = pd.Series([f"{prefix}{i:08d}" for i in range(n)], dtype="object")
+        frame["split"] = pd.Series([split] * n, dtype="object")
+        datasets[split] = frame
+    return datasets
+
+END FILE: src/redqueen/simulator.py
+
+================================================================================
+BEGIN FILE: src/redqueen/baseline.py
+================================================================================
+"""Fixed, deliberately imperfect baseline; all thresholds are design choices."""
+from __future__ import annotations
+
+import pandas as pd
+
+from redqueen.rule_engine import apply_rule, combine
+from redqueen.schemas import DefenseRule
+
+
+class BaselineDetector:
+    """OR four transparent DefenseRules, evaluated through the shared engine.
+
+    Large amounts >=5000; hourly velocity >=12; geo + new device + amount>=800;
+    or account age<3 + amount>=1000. No threshold adapts to evaluation data.
+    """
+
+    def __init__(self) -> None:
+        self.rules: list[DefenseRule] = [
+            DefenseRule(clauses=[{"field": "amount", "op": ">=", "val": 5000}],
+                        action="FLAG", rationale="Large transaction."),
+            DefenseRule(clauses=[{"field": "velocity_1h", "op": ">=", "val": 12}],
+                        action="FLAG", rationale="Extreme hourly burst."),
+            DefenseRule(clauses=[
+                {"field": "geo_mismatch", "op": "==", "val": 1},
+                {"field": "is_new_device", "op": "==", "val": 1},
+                {"field": "amount", "op": ">=", "val": 800},
+            ], action="FLAG", rationale="New device and geography with a large amount."),
+            DefenseRule(clauses=[
+                {"field": "account_age_days", "op": "<", "val": 3},
+                {"field": "amount", "op": ">=", "val": 1000},
+            ], action="FLAG", rationale="Large amount on a very young account."),
+        ]
+
+    def predict(self, df: pd.DataFrame) -> "pd.Series[bool]":
+        """Return boolean flags aligned with df, without modifying transactions."""
+        flags = pd.Series(False, index=df.index, dtype=bool)
+        for rule in self.rules:
+            flags = combine(flags, apply_rule(rule, df))
+        return flags
+
+END FILE: src/redqueen/baseline.py
+
+================================================================================
+BEGIN FILE: src/redqueen/rule_engine.py
+================================================================================
+"""Vectorised, revalidated declarative clauses and monotonic OR patches."""
+from __future__ import annotations
+
+import operator
+
+import numpy as np
+import pandas as pd
+from pydantic import ValidationError
+
+from redqueen.schemas import DefenseRule
+
+
+class RuleExecutionError(ValueError):
+    """A malformed rule, incompatible data, or misaligned flag vector."""
+
+
+def apply_rule(rule: DefenseRule, df: pd.DataFrame) -> "pd.Series[bool]":
+    """Revalidate even constructed/mutated models; AND clauses on df's index."""
+    try:
+        payload = rule.model_dump() if isinstance(rule, DefenseRule) else rule
+        checked = DefenseRule.model_validate(payload)
+        comparisons = {
+            ">": operator.gt, ">=": operator.ge, "<": operator.lt,
+            "<=": operator.le, "==": operator.eq, "!=": operator.ne,
+        }
+        result = pd.Series(True, index=df.index, dtype=bool)
+        for clause in checked.clauses:
+            if isinstance(clause.val, (int, float)) and not np.isfinite(clause.val):
+                raise RuleExecutionError("Rule thresholds must be finite")
+            values = df[clause.field]
+            if not isinstance(values, pd.Series) or values.isna().any():
+                raise RuleExecutionError(f"Missing or duplicate values for {clause.field}")
+            result &= comparisons[clause.op](values, clause.val).astype(bool)
+        return result
+    except (ValidationError, KeyError, TypeError, ValueError, AttributeError) as exc:
+        if isinstance(exc, RuleExecutionError):
+            raise
+        raise RuleExecutionError(f"Cannot execute defense rule: {exc}") from exc
+
+
+def combine(
+    baseline_flags: "pd.Series[bool]",
+    rule_flags: "pd.Series[bool]",
+) -> "pd.Series[bool]":
+    """Elementwise OR; reject index mismatches rather than silently align rows."""
+    for flags in (baseline_flags, rule_flags):
+        if not isinstance(flags, pd.Series) or not pd.api.types.is_bool_dtype(flags):
+            raise RuleExecutionError("Flags must be boolean Series")
+        if flags.isna().any():
+            raise RuleExecutionError("Flags must not contain missing values")
+    if not baseline_flags.index.equals(rule_flags.index):
+        raise RuleExecutionError("Flag indices must match in the same order")
+    return (baseline_flags | rule_flags).astype(bool)
+
+END FILE: src/redqueen/rule_engine.py
+
+================================================================================
+BEGIN FILE: src/redqueen/metrics.py
+================================================================================
+"""Confusion counts, target recall and segment FPR, computed only from data."""
+from __future__ import annotations
+
+import numpy as np
+import pandas as pd
+
+from redqueen.schemas import ALLOWED_FIELDS, MetricSet
+
+
+def _binary_values(values: object, name: str, index: pd.Index | None = None) -> np.ndarray:
+    if isinstance(values, pd.Series) and index is not None and not values.index.equals(index):
+        raise ValueError(f"{name} index must match transaction order")
+    array = np.asarray(values)
+    if array.ndim != 1 or not np.isin(array, [0, 1]).all():
+        raise ValueError(f"{name} must be a one-dimensional binary vector without missing values")
+    if index is not None and len(array) != len(index):
+        raise ValueError(f"{name} length must match transaction count")
+    return array.astype(bool)
+
+
+def compute_metrics(
+    y_true: "pd.Series[int]",
+    y_pred: "pd.Series[bool]",
+) -> MetricSet:
+    """Compute counts and rates; every empty denominator returns 0.0."""
+    index = y_true.index if isinstance(y_true, pd.Series) else None
+    truth = _binary_values(y_true, "y_true")
+    predicted = _binary_values(y_pred, "y_pred", index)
+    if len(truth) != len(predicted):
+        raise ValueError("Labels and predictions must have equal lengths")
+    tp = int(np.count_nonzero(truth & predicted))
+    fp = int(np.count_nonzero(~truth & predicted))
+    tn = int(np.count_nonzero(~truth & ~predicted))
+    fn = int(np.count_nonzero(truth & ~predicted))
+    return MetricSet(
+        recall=tp / (tp + fn) if tp + fn else 0.0,
+        precision=tp / (tp + fp) if tp + fp else 0.0,
+        fpr=fp / (fp + tn) if fp + tn else 0.0,
+        tp=tp, fp=fp, tn=tn, fn=fn,
+    )
+
+
+def recall_gain_pp(base: MetricSet, patched: MetricSet) -> float:
+    """Absolute recall gain in percentage points; NOT relative improvement.
+
+    Relative improvement divides by baseline recall and is not used for gating.
+    """
+    return (patched.recall - base.recall) * 100.0
+
+
+def legit_flagged_per_10k(fp: int, n_legit: int) -> float:
+    """Scale false positives to 10,000 legitimate rows (0 if there are none)."""
+    if not 0 <= fp <= n_legit:
+        raise ValueError("Require 0 <= fp <= n_legit")
+    return fp / n_legit * 10_000.0 if n_legit else 0.0
+
+
+def target_attack_recall(df: pd.DataFrame, flags: "pd.Series[bool]", attack_name: str) -> float:
+    """Recall on fraud bearing attack_name, excluding unrelated background.
+
+    Zero target rows returns 0.0, never evidence of success: Phase 4 must reject
+    a final candidate whose sealed target-positive denominator is zero.
+    """
+    predicted = _binary_values(flags, "flags", df.index)
+    truth = _binary_values(df["is_fraud"], "is_fraud", df.index)
+    target = truth & df["attack_name"].eq(attack_name).to_numpy()
+    count = int(target.sum())
+    return float(predicted[target].sum() / count) if count else 0.0
+
+
+def segment_fpr(
+    df: pd.DataFrame,
+    flags: "pd.Series[bool]",
+    segments: list[str],
+) -> dict:
+    """Return {segment: {value: {fpr, fp, n_legit}}}, including empty groups.
+
+    Supported segments: merchant_category, channel, account_age_bucket.
+    Age boundaries are <30, 30 through 365 inclusive, and >365. Frauds never
+    contribute to FPR. Callers apply Settings.min_segment_legit_count.
+    """
+    predicted = _binary_values(flags, "flags", df.index)
+    legit = ~_binary_values(df["is_fraud"], "is_fraud", df.index)
+    result = {}
+    for segment in segments:
+        if segment == "account_age_bucket":
+            age = df["account_age_days"].to_numpy()
+            values = np.where(age < 30, "<30", np.where(age <= 365, "30-365", ">365"))
+            categories = ["<30", "30-365", ">365"]
+        elif segment in ("merchant_category", "channel"):
+            values = df[segment].to_numpy()
+            categories = sorted(ALLOWED_FIELDS[segment].categories or ())
+        else:
+            raise ValueError(f"Unsupported FPR segment: {segment}")
+        groups = {}
+        for category in categories:
+            mask = legit & (values == category)
+            count = int(mask.sum())
+            fp = int(predicted[mask].sum())
+            groups[category] = {"fpr": fp / count if count else 0.0,
+                                "fp": fp, "n_legit": count}
+        result[segment] = groups
+    return result
+
+END FILE: src/redqueen/metrics.py
+
+================================================================================
+BEGIN FILE: src/redqueen/failure_analysis.py
+================================================================================
+"""Sample-only failure evidence; no validation or sealed rows may enter."""
+from __future__ import annotations
+
+import numpy as np
+import pandas as pd
+
+from redqueen.config import Settings
+from redqueen.metrics import compute_metrics
+from redqueen.schemas import ALLOWED_FIELDS, Evidence
+
+
+def _normalised_features(frame: pd.DataFrame) -> np.ndarray:
+    """Scale numeric fields by sample range and one-hot encode categories.
+
+    A categorical mismatch contributes squared distance 1 (two one-hot
+    coordinates scaled by sqrt(2)). Sorting fixed categories avoids hash-order
+    dependence. All scaling is fitted ONLY on the supplied sample.
+    """
+    columns = []
+    for name, spec in ALLOWED_FIELDS.items():
+        if spec.dtype == "str":
+            for category in sorted(spec.categories or ()):
+                columns.append(frame[name].eq(category).to_numpy(dtype=float) / np.sqrt(2))
+        else:
+            values = frame[name].to_numpy(dtype=float)
+            span = np.ptp(values) if len(values) else 0.0
+            columns.append((values - values.min()) / (span or 1.0) if len(values) else values)
+    return np.column_stack(columns)
+
+
+def _quantiles(frame: pd.DataFrame) -> dict:
+    """JSON-safe numeric quantiles; empty cohorts produce empty maps."""
+    if frame.empty:
+        return {}
+    return {
+        name: {str(q): float(frame[name].quantile(q)) for q in (0.1, 0.5, 0.9)}
+        for name, spec in ALLOWED_FIELDS.items() if spec.dtype != "str"
+    }
+
+
+def build_evidence(
+    sample_df: pd.DataFrame,
+    baseline_flags: "pd.Series[bool]",
+    settings: Settings,
+) -> Evidence:
+    """Return <=25 target misses and <=25 nearest unique legitimate rows.
+
+    Infer the single target attack from fraud labels other than 'background'.
+    Multiple target names are rejected because this interface has no spec
+    argument. Nearest neighbours minimise squared distance to any displayed
+    miss; stable sorting resolves ties in original row order. With no target
+    misses there are no neighbours. Inputs are never modified.
+    """
+    if "split" not in sample_df or not sample_df["split"].eq("sample").all():
+        raise ValueError("Evidence requires sample-only rows")
+    fields = list(ALLOWED_FIELDS)
+    if not set(fields).issubset(sample_df.columns):
+        raise ValueError("Evidence requires all permitted feature columns")
+    baseline = compute_metrics(sample_df["is_fraud"], baseline_flags)
+    fraud = sample_df["is_fraud"].eq(1).to_numpy()
+    predicted = np.asarray(baseline_flags, dtype=bool)
+    names = sample_df.loc[
+        sample_df["is_fraud"].eq(1) & ~sample_df["attack_name"].eq("background"),
+        "attack_name",
+    ].unique()
+    if len(names) > 1 or (len(names) == 1 and names[0] in ("none", "")):
+        raise ValueError("Evidence expects one named target attack")
+    target = fraud & sample_df["attack_name"].isin(names).to_numpy()
+    missed_positions = np.flatnonzero(target & ~predicted)
+    displayed_positions = missed_positions[:25]
+    missed = sample_df.iloc[displayed_positions][fields]
+    legit_positions = np.flatnonzero(~fraud)
+    neighbours = np.array([], dtype=int)
+    if len(displayed_positions) and len(legit_positions):
+        features = _normalised_features(sample_df)
+        # O(n_legit * <=25 * n_features) time, O(n_sample * n_features) memory.
+        # Avoid an n_legit x n_misses x n_features broadcast allocation.
+        distances = np.full(len(legit_positions), np.inf)
+        for position in displayed_positions:
+            delta = features[legit_positions] - features[position]
+            distances = np.minimum(distances, np.einsum("ij,ij->i", delta, delta))
+        neighbours = legit_positions[np.argsort(distances, kind="stable")[:25]]
+    lookalikes = sample_df.iloc[neighbours][fields]
+    target_count = int(target.sum())
+    summary = {
+        "n_rows": len(sample_df), "n_legit": int((~fraud).sum()),
+        "n_fraud": int(fraud.sum()), "n_target_fraud": target_count,
+        "n_background_fraud": int((fraud & ~target).sum()),
+        "n_missed_target": len(missed_positions),
+        "n_displayed_missed": len(missed), "n_lookalike_legit": len(lookalikes),
+        "baseline_recall": baseline.recall,
+        "baseline_target_recall": float(predicted[target].sum() / target_count)
+            if target_count else 0.0,
+        "min_segment_legit_count": settings.min_segment_legit_count,
+        "quantiles": {"missed_fraud": _quantiles(missed),
+                      "lookalike_legit": _quantiles(lookalikes)},
+    }
+    return Evidence(
+        missed_fraud=missed.to_dict(orient="records"),
+        lookalike_legit=lookalikes.to_dict(orient="records"),
+        permitted_fields=fields, summary_stats=summary,
+    )
+
+END FILE: src/redqueen/failure_analysis.py

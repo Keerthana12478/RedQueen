@@ -1,6 +1,6 @@
-"""RedQueen — top-level pipeline orchestrator (stub).
+"""RedQueen — shared end-to-end orchestrator for CLI and dashboard.
 
-Phase 5 completes the orchestration; Phase 6 hardens it.
+Model proposals are bounded; independent Python owns final decisions.
 Signatures are **frozen**; do not rename.
 
 INVARIANTS:
@@ -73,8 +73,8 @@ class SimulationBoundary:
     ) -> VerificationReport:
         """Transfer the sealed capability only to the final gate method.
 
-        One-shot evaluation and rejection of zero target positives belong to
-        the Phase 4 gate, whose implementation remains out of Phase 2 scope.
+        One-shot finalization and target-positive evidence checks are owned
+        by the independent gate.
         """
         return gate.evaluate_final(rule, {"sealed": self.__sealed}, baseline, approved_attacks)
 

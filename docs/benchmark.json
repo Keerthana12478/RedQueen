@@ -1,0 +1,758 @@
+[
+  {
+    "scenario": "CryptoNewAccountBurst",
+    "mode": "replay",
+    "seed": 1337,
+    "report": {
+      "verdict": "REJECTED",
+      "reason": "segment_fpr: Worst: merchant_category=crypto; ",
+      "checks": [
+        {
+          "name": "rule_valid",
+          "passed": true,
+          "observed": 1.0,
+          "threshold": 1.0,
+          "detail": "Fields, operators, bounds and FLAG action revalidated"
+        },
+        {
+          "name": "rule_complexity",
+          "passed": true,
+          "observed": 2.0,
+          "threshold": 3.0,
+          "detail": "AND clauses; FLAG only"
+        },
+        {
+          "name": "monotonic",
+          "passed": true,
+          "observed": 0.0,
+          "threshold": 0.0,
+          "detail": "Every existing baseline and active-sandbox flag must remain flagged"
+        },
+        {
+          "name": "target_recall_gain",
+          "passed": true,
+          "observed": 84.94077834179356,
+          "threshold": 5.0,
+          "detail": "Marginal target recall gain in pp on 591 target fraud rows"
+        },
+        {
+          "name": "global_fpr",
+          "passed": true,
+          "observed": 0.00978723404255319,
+          "threshold": 0.015,
+          "detail": "Cumulative sandbox FPR on legitimate transactions"
+        },
+        {
+          "name": "segment_fpr",
+          "passed": false,
+          "observed": 0.32978723404255317,
+          "threshold": 0.03,
+          "detail": "Worst: merchant_category=crypto; "
+        },
+        {
+          "name": "regression",
+          "passed": false,
+          "observed": 2.0,
+          "threshold": 0.0,
+          "detail": "Failed recall/FPR/segment protection: GiftCardNightBurst, ReferenceCrypto"
+        }
+      ],
+      "baseline": {
+        "recall": 0.015,
+        "precision": 0.1267605633802817,
+        "fpr": 0.006595744680851064,
+        "tp": 9,
+        "fp": 62,
+        "tn": 9338,
+        "fn": 591
+      },
+      "patched": {
+        "recall": 0.8516666666666667,
+        "precision": 0.8474295190713101,
+        "fpr": 0.00978723404255319,
+        "tp": 511,
+        "fp": 92,
+        "tn": 9308,
+        "fn": 89
+      },
+      "recall_gain_pp": 84.94077834179356,
+      "legit_flagged_per_10k": 97.8723404255319,
+      "sealed_evaluated": true,
+      "latency_ms": 200.0531000085175,
+      "target_baseline_recall": 0.0,
+      "target_patched_recall": 0.8494077834179357,
+      "target_fraud_count": 591,
+      "original_baseline": {
+        "recall": 0.015,
+        "precision": 0.1267605633802817,
+        "fpr": 0.006595744680851064,
+        "tp": 9,
+        "fp": 62,
+        "tn": 9338,
+        "fn": 591
+      },
+      "candidate_only": {
+        "recall": 0.8516666666666667,
+        "precision": 0.8474295190713101,
+        "fpr": 0.00978723404255319,
+        "tp": 511,
+        "fp": 92,
+        "tn": 9308,
+        "fn": 89
+      },
+      "segment_results": [
+        {
+          "segment": "merchant_category",
+          "value": "crypto",
+          "fpr": 0.32978723404255317,
+          "fp": 31,
+          "n_legit": 94,
+          "budget": 0.03,
+          "status": "FAIL"
+        },
+        {
+          "segment": "merchant_category",
+          "value": "dining",
+          "fpr": 0.0062056737588652485,
+          "fp": 14,
+          "n_legit": 2256,
+          "budget": 0.03,
+          "status": "PASS"
+        },
+        {
+          "segment": "merchant_category",
+          "value": "electronics",
+          "fpr": 0.005313496280552604,
+          "fp": 5,
+          "n_legit": 941,
+          "budget": 0.03,
+          "status": "PASS"
+        },
+        {
+          "segment": "merchant_category",
+          "value": "gift_card",
+          "fpr": 0.0106951871657754,
+          "fp": 2,
+          "n_legit": 187,
+          "budget": 0.03,
+          "status": "PASS"
+        },
+        {
+          "segment": "merchant_category",
+          "value": "grocery",
+          "fpr": 0.007598784194528876,
+          "fp": 20,
+          "n_legit": 2632,
+          "budget": 0.03,
+          "status": "PASS"
+        },
+        {
+          "segment": "merchant_category",
+          "value": "peer_transfer",
+          "fpr": 0.006648936170212766,
+          "fp": 5,
+          "n_legit": 752,
+          "budget": 0.03,
+          "status": "PASS"
+        },
+        {
+          "segment": "merchant_category",
+          "value": "travel",
+          "fpr": 0.007598784194528876,
+          "fp": 5,
+          "n_legit": 658,
+          "budget": 0.03,
+          "status": "PASS"
+        },
+        {
+          "segment": "merchant_category",
+          "value": "utilities",
+          "fpr": 0.005319148936170213,
+          "fp": 10,
+          "n_legit": 1880,
+          "budget": 0.03,
+          "status": "PASS"
+        },
+        {
+          "segment": "channel",
+          "value": "atm",
+          "fpr": 0.011013215859030838,
+          "fp": 5,
+          "n_legit": 454,
+          "budget": 0.03,
+          "status": "PASS"
+        },
+        {
+          "segment": "channel",
+          "value": "mobile",
+          "fpr": 0.007961783439490446,
+          "fp": 30,
+          "n_legit": 3768,
+          "budget": 0.03,
+          "status": "PASS"
+        },
+        {
+          "segment": "channel",
+          "value": "pos",
+          "fpr": 0.011506652283351312,
+          "fp": 32,
+          "n_legit": 2781,
+          "budget": 0.03,
+          "status": "PASS"
+        },
+        {
+          "segment": "channel",
+          "value": "web",
+          "fpr": 0.010429703796412181,
+          "fp": 25,
+          "n_legit": 2397,
+          "budget": 0.03,
+          "status": "PASS"
+        },
+        {
+          "segment": "account_age_bucket",
+          "value": "<30",
+          "fpr": 0.026845637583892617,
+          "fp": 16,
+          "n_legit": 596,
+          "budget": 0.03,
+          "status": "PASS"
+        },
+        {
+          "segment": "account_age_bucket",
+          "value": "30-365",
+          "fpr": 0.01513671875,
+          "fp": 31,
+          "n_legit": 2048,
+          "budget": 0.03,
+          "status": "PASS"
+        },
+        {
+          "segment": "account_age_bucket",
+          "value": ">365",
+          "fpr": 0.0066607460035523975,
+          "fp": 45,
+          "n_legit": 6756,
+          "budget": 0.03,
+          "status": "PASS"
+        }
+      ],
+      "run_id": "5081e3f265684e2bb0a8b278d26da1e9",
+      "rule_fingerprint": "2e82958aed2fc7c84a3751549c63a46db26bb418017d6f9c2021556d7de3cbfa",
+      "active_rule_fingerprints": []
+    },
+    "telemetry": {
+      "mode": "replay",
+      "model_used": null,
+      "model_latency_ms": null,
+      "verification_latency_ms": 200.0531000085175,
+      "attempts": 0,
+      "replay_scenario": "CryptoNewAccountBurst",
+      "replay_match": "exact"
+    }
+  },
+  {
+    "scenario": "GiftCardNightBurst",
+    "mode": "replay",
+    "seed": 1337,
+    "report": {
+      "verdict": "ACCEPTED",
+      "reason": "All deterministic checks passed",
+      "checks": [
+        {
+          "name": "rule_valid",
+          "passed": true,
+          "observed": 1.0,
+          "threshold": 1.0,
+          "detail": "Fields, operators, bounds and FLAG action revalidated"
+        },
+        {
+          "name": "rule_complexity",
+          "passed": true,
+          "observed": 3.0,
+          "threshold": 3.0,
+          "detail": "AND clauses; FLAG only"
+        },
+        {
+          "name": "monotonic",
+          "passed": true,
+          "observed": 0.0,
+          "threshold": 0.0,
+          "detail": "Every existing baseline and active-sandbox flag must remain flagged"
+        },
+        {
+          "name": "target_recall_gain",
+          "passed": true,
+          "observed": 53.68020304568528,
+          "threshold": 5.0,
+          "detail": "Marginal target recall gain in pp on 788 target fraud rows"
+        },
+        {
+          "name": "global_fpr",
+          "passed": true,
+          "observed": 0.007065217391304348,
+          "threshold": 0.015,
+          "detail": "Cumulative sandbox FPR on legitimate transactions"
+        },
+        {
+          "name": "segment_fpr",
+          "passed": true,
+          "observed": 0.014466546112115732,
+          "threshold": 0.03,
+          "detail": "Worst: account_age_bucket=<30; "
+        },
+        {
+          "name": "regression",
+          "passed": true,
+          "observed": 0.0,
+          "threshold": 0.0,
+          "detail": "Recall and cumulative FPR budgets retained on 2 reference attacks"
+        }
+      ],
+      "baseline": {
+        "recall": 0.275,
+        "precision": 0.7719298245614035,
+        "fpr": 0.007065217391304348,
+        "tp": 220,
+        "fp": 65,
+        "tn": 9135,
+        "fn": 580
+      },
+      "patched": {
+        "recall": 0.80375,
+        "precision": 0.9081920903954802,
+        "fpr": 0.007065217391304348,
+        "tp": 643,
+        "fp": 65,
+        "tn": 9135,
+        "fn": 157
+      },
+      "recall_gain_pp": 53.68020304568528,
+      "legit_flagged_per_10k": 70.65217391304348,
+      "sealed_evaluated": true,
+      "latency_ms": 216.9183000223711,
+      "target_baseline_recall": 0.2639593908629442,
+      "target_patched_recall": 0.800761421319797,
+      "target_fraud_count": 788,
+      "original_baseline": {
+        "recall": 0.275,
+        "precision": 0.7719298245614035,
+        "fpr": 0.007065217391304348,
+        "tp": 220,
+        "fp": 65,
+        "tn": 9135,
+        "fn": 580
+      },
+      "candidate_only": {
+        "recall": 0.80375,
+        "precision": 0.9081920903954802,
+        "fpr": 0.007065217391304348,
+        "tp": 643,
+        "fp": 65,
+        "tn": 9135,
+        "fn": 157
+      },
+      "segment_results": [
+        {
+          "segment": "merchant_category",
+          "value": "crypto",
+          "fpr": 0.0,
+          "fp": 0,
+          "n_legit": 92,
+          "budget": 0.03,
+          "status": "PASS"
+        },
+        {
+          "segment": "merchant_category",
+          "value": "dining",
+          "fpr": 0.008605072463768116,
+          "fp": 19,
+          "n_legit": 2208,
+          "budget": 0.03,
+          "status": "PASS"
+        },
+        {
+          "segment": "merchant_category",
+          "value": "electronics",
+          "fpr": 0.004343105320304018,
+          "fp": 4,
+          "n_legit": 921,
+          "budget": 0.03,
+          "status": "PASS"
+        },
+        {
+          "segment": "merchant_category",
+          "value": "gift_card",
+          "fpr": 0.0,
+          "fp": 0,
+          "n_legit": 183,
+          "budget": 0.03,
+          "status": "PASS"
+        },
+        {
+          "segment": "merchant_category",
+          "value": "grocery",
+          "fpr": 0.006211180124223602,
+          "fp": 16,
+          "n_legit": 2576,
+          "budget": 0.03,
+          "status": "PASS"
+        },
+        {
+          "segment": "merchant_category",
+          "value": "peer_transfer",
+          "fpr": 0.010869565217391304,
+          "fp": 8,
+          "n_legit": 736,
+          "budget": 0.03,
+          "status": "PASS"
+        },
+        {
+          "segment": "merchant_category",
+          "value": "travel",
+          "fpr": 0.004658385093167702,
+          "fp": 3,
+          "n_legit": 644,
+          "budget": 0.03,
+          "status": "PASS"
+        },
+        {
+          "segment": "merchant_category",
+          "value": "utilities",
+          "fpr": 0.008152173913043478,
+          "fp": 15,
+          "n_legit": 1840,
+          "budget": 0.03,
+          "status": "PASS"
+        },
+        {
+          "segment": "channel",
+          "value": "atm",
+          "fpr": 0.011389521640091117,
+          "fp": 5,
+          "n_legit": 439,
+          "budget": 0.03,
+          "status": "PASS"
+        },
+        {
+          "segment": "channel",
+          "value": "mobile",
+          "fpr": 0.00674217907227616,
+          "fp": 25,
+          "n_legit": 3708,
+          "budget": 0.03,
+          "status": "PASS"
+        },
+        {
+          "segment": "channel",
+          "value": "pos",
+          "fpr": 0.008076358296622614,
+          "fp": 22,
+          "n_legit": 2724,
+          "budget": 0.03,
+          "status": "PASS"
+        },
+        {
+          "segment": "channel",
+          "value": "web",
+          "fpr": 0.0055817947617003,
+          "fp": 13,
+          "n_legit": 2329,
+          "budget": 0.03,
+          "status": "PASS"
+        },
+        {
+          "segment": "account_age_bucket",
+          "value": "<30",
+          "fpr": 0.014466546112115732,
+          "fp": 8,
+          "n_legit": 553,
+          "budget": 0.03,
+          "status": "PASS"
+        },
+        {
+          "segment": "account_age_bucket",
+          "value": "30-365",
+          "fpr": 0.005047955577990914,
+          "fp": 10,
+          "n_legit": 1981,
+          "budget": 0.03,
+          "status": "PASS"
+        },
+        {
+          "segment": "account_age_bucket",
+          "value": ">365",
+          "fpr": 0.007050705070507051,
+          "fp": 47,
+          "n_legit": 6666,
+          "budget": 0.03,
+          "status": "PASS"
+        }
+      ],
+      "run_id": "7a6e77ef2f3f4d81907db13cb670ecd5",
+      "rule_fingerprint": "33ff17ff0ebcca968a3f87e9de8665da143dd726007e6dd2d910dbc72109b9a8",
+      "active_rule_fingerprints": []
+    },
+    "telemetry": {
+      "mode": "replay",
+      "model_used": null,
+      "model_latency_ms": null,
+      "verification_latency_ms": 216.9183000223711,
+      "attempts": 0,
+      "replay_scenario": "GiftCardNightBurst",
+      "replay_match": "exact"
+    }
+  },
+  {
+    "scenario": "HighAmountGeoMismatch",
+    "mode": "replay",
+    "seed": 1337,
+    "report": {
+      "verdict": "REJECTED",
+      "reason": "global_fpr: Cumulative sandbox FPR on legitimate transactions",
+      "checks": [
+        {
+          "name": "rule_valid",
+          "passed": true,
+          "observed": 1.0,
+          "threshold": 1.0,
+          "detail": "Fields, operators, bounds and FLAG action revalidated"
+        },
+        {
+          "name": "rule_complexity",
+          "passed": true,
+          "observed": 1.0,
+          "threshold": 3.0,
+          "detail": "AND clauses; FLAG only"
+        },
+        {
+          "name": "monotonic",
+          "passed": true,
+          "observed": 0.0,
+          "threshold": 0.0,
+          "detail": "Every existing baseline and active-sandbox flag must remain flagged"
+        },
+        {
+          "name": "target_recall_gain",
+          "passed": true,
+          "observed": 7.208121827411162,
+          "threshold": 5.0,
+          "detail": "Marginal target recall gain in pp on 985 target fraud rows"
+        },
+        {
+          "name": "global_fpr",
+          "passed": false,
+          "observed": 0.03788888888888889,
+          "threshold": 0.015,
+          "detail": "Cumulative sandbox FPR on legitimate transactions"
+        },
+        {
+          "name": "segment_fpr",
+          "passed": false,
+          "observed": 0.06367924528301887,
+          "threshold": 0.03,
+          "detail": "Worst: channel=atm; "
+        },
+        {
+          "name": "regression",
+          "passed": false,
+          "observed": 2.0,
+          "threshold": 0.0,
+          "detail": "Failed recall/FPR/segment protection: GiftCardNightBurst, ReferenceCrypto"
+        }
+      ],
+      "baseline": {
+        "recall": 0.613,
+        "precision": 0.9231927710843374,
+        "fpr": 0.005666666666666667,
+        "tp": 613,
+        "fp": 51,
+        "tn": 8949,
+        "fn": 387
+      },
+      "patched": {
+        "recall": 0.684,
+        "precision": 0.6673170731707317,
+        "fpr": 0.03788888888888889,
+        "tp": 684,
+        "fp": 341,
+        "tn": 8659,
+        "fn": 316
+      },
+      "recall_gain_pp": 7.208121827411162,
+      "legit_flagged_per_10k": 378.8888888888889,
+      "sealed_evaluated": true,
+      "latency_ms": 194.5854999939911,
+      "target_baseline_recall": 0.6071065989847716,
+      "target_patched_recall": 0.6791878172588832,
+      "target_fraud_count": 985,
+      "original_baseline": {
+        "recall": 0.613,
+        "precision": 0.9231927710843374,
+        "fpr": 0.005666666666666667,
+        "tp": 613,
+        "fp": 51,
+        "tn": 8949,
+        "fn": 387
+      },
+      "candidate_only": {
+        "recall": 0.684,
+        "precision": 0.6673170731707317,
+        "fpr": 0.03788888888888889,
+        "tp": 684,
+        "fp": 341,
+        "tn": 8659,
+        "fn": 316
+      },
+      "segment_results": [
+        {
+          "segment": "merchant_category",
+          "value": "crypto",
+          "fpr": 0.011111111111111112,
+          "fp": 1,
+          "n_legit": 90,
+          "budget": 0.03,
+          "status": "PASS"
+        },
+        {
+          "segment": "merchant_category",
+          "value": "dining",
+          "fpr": 0.041666666666666664,
+          "fp": 90,
+          "n_legit": 2160,
+          "budget": 0.03,
+          "status": "FAIL"
+        },
+        {
+          "segment": "merchant_category",
+          "value": "electronics",
+          "fpr": 0.043333333333333335,
+          "fp": 39,
+          "n_legit": 900,
+          "budget": 0.03,
+          "status": "FAIL"
+        },
+        {
+          "segment": "merchant_category",
+          "value": "gift_card",
+          "fpr": 0.044444444444444446,
+          "fp": 8,
+          "n_legit": 180,
+          "budget": 0.03,
+          "status": "FAIL"
+        },
+        {
+          "segment": "merchant_category",
+          "value": "grocery",
+          "fpr": 0.039285714285714285,
+          "fp": 99,
+          "n_legit": 2520,
+          "budget": 0.03,
+          "status": "FAIL"
+        },
+        {
+          "segment": "merchant_category",
+          "value": "peer_transfer",
+          "fpr": 0.03611111111111111,
+          "fp": 26,
+          "n_legit": 720,
+          "budget": 0.03,
+          "status": "FAIL"
+        },
+        {
+          "segment": "merchant_category",
+          "value": "travel",
+          "fpr": 0.0380952380952381,
+          "fp": 24,
+          "n_legit": 630,
+          "budget": 0.03,
+          "status": "FAIL"
+        },
+        {
+          "segment": "merchant_category",
+          "value": "utilities",
+          "fpr": 0.03,
+          "fp": 54,
+          "n_legit": 1800,
+          "budget": 0.03,
+          "status": "PASS"
+        },
+        {
+          "segment": "channel",
+          "value": "atm",
+          "fpr": 0.06367924528301887,
+          "fp": 27,
+          "n_legit": 424,
+          "budget": 0.03,
+          "status": "FAIL"
+        },
+        {
+          "segment": "channel",
+          "value": "mobile",
+          "fpr": 0.033268101761252444,
+          "fp": 119,
+          "n_legit": 3577,
+          "budget": 0.03,
+          "status": "FAIL"
+        },
+        {
+          "segment": "channel",
+          "value": "pos",
+          "fpr": 0.036005939123979216,
+          "fp": 97,
+          "n_legit": 2694,
+          "budget": 0.03,
+          "status": "FAIL"
+        },
+        {
+          "segment": "channel",
+          "value": "web",
+          "fpr": 0.04251626898047722,
+          "fp": 98,
+          "n_legit": 2305,
+          "budget": 0.03,
+          "status": "FAIL"
+        },
+        {
+          "segment": "account_age_bucket",
+          "value": "<30",
+          "fpr": 0.034026465028355386,
+          "fp": 18,
+          "n_legit": 529,
+          "budget": 0.03,
+          "status": "FAIL"
+        },
+        {
+          "segment": "account_age_bucket",
+          "value": "30-365",
+          "fpr": 0.03571428571428571,
+          "fp": 70,
+          "n_legit": 1960,
+          "budget": 0.03,
+          "status": "FAIL"
+        },
+        {
+          "segment": "account_age_bucket",
+          "value": ">365",
+          "fpr": 0.03885731838427277,
+          "fp": 253,
+          "n_legit": 6511,
+          "budget": 0.03,
+          "status": "FAIL"
+        }
+      ],
+      "run_id": "171b33e631314776b3abd513a50bbfd4",
+      "rule_fingerprint": "1f3807275c322e4994a546f6043790e422bc1e902668d958582ed3c0674ae5a4",
+      "active_rule_fingerprints": []
+    },
+    "telemetry": {
+      "mode": "replay",
+      "model_used": null,
+      "model_latency_ms": null,
+      "verification_latency_ms": 194.5854999939911,
+      "attempts": 0,
+      "replay_scenario": "HighAmountGeoMismatch",
+      "replay_match": "exact"
+    }
+  }
+]

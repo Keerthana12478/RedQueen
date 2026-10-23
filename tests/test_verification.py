@@ -194,3 +194,11 @@ def test_stratified_merchant_sampling_preserves_burst_lookalikes():
         assert abs(df.loc[mask, "merchant_category"].eq("crypto").mean() - 0.01) < 0.002
         assert abs(df.loc[mask, "merchant_category"].eq("gift_card").mean() - 0.02) < 0.002
     assert (df.merchant_category.eq("crypto") & df.velocity_1h.ge(12)).any()
+
+
+def test_monotonicity_protects_original_baseline_with_existing_rules(demo,monkeypatch):
+    import redqueen.verification as module
+    monkeypatch.setattr(module,"combine",lambda left,right:pd.Series(False,index=left.index))
+    report=evaluate(good(),demo,active_rules=[good()])
+    assert report.reason.startswith("monotonic")
+    assert next(c.observed for c in report.checks if c.name=="monotonic")>0

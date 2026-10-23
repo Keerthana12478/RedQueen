@@ -93,7 +93,8 @@ class SandboxState:
     def activate(self, rule: DefenseRule, report: VerificationReport, *, spec: AttackSpec | None = None):
         fingerprints = [rule_fingerprint(r) for r in self.__rules]
         if (report.verdict != "ACCEPTED" or not report.sealed_evaluated
-                or not report.checks or not all(c.passed for c in report.checks)
+                or {c.name for c in report.checks} != {"rule_valid", "rule_complexity", "monotonic", "target_recall_gain", "global_fpr", "segment_fpr", "regression"}
+                or not all(c.passed for c in report.checks)
                 or report.rule_fingerprint != rule_fingerprint(rule)
                 or report.active_rule_fingerprints != fingerprints
                 or not report.run_id or report.run_id in self.__runs):
@@ -177,7 +178,8 @@ class VerificationGate:
         before = target_attack_recall(df, current, target)
         after = target_attack_recall(df, patched, target)
         gain = (after - before) * 100
-        check("monotonic", bool((~current | patched).all()), int((current & ~patched).sum()), 0,
+        required_flags = original | current
+        check("monotonic", bool((~required_flags | patched).all()), int((required_flags & ~patched).sum()), 0,
               "Every existing baseline and active-sandbox flag must remain flagged")
         check("target_recall_gain", target_count > 0 and gain >= self.settings.min_recall_gain_pp,
               gain, self.settings.min_recall_gain_pp,

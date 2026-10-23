@@ -1,144 +1,110 @@
-# RedQueen — Architecture Reference
+# RedQueen architecture and contracts
 
-> **Gemma proposes. Python verifies.**
+**Gemma proposes. Python verifies.**
 
-One-page contract summary for all phases.  Filenames, schema field names, and
-invariants listed here are **frozen** — additions require documented,
-backward-compatible changes.
+The shared pipeline.run_redqueen function owns the eight-stage flow. The CLI and Streamlit
+use the same orchestrator. Existing module names and required schema fields are preserved.
 
----
+~~~text
+Judge text → attack_lab → AttackSpec
+                       ↓
+                 SimulationBoundary
+                 ├── sample → baseline + active rules → Evidence → defender_forge
+                 ├── validation → VerificationGate.evaluate_validation → coarse feedback
+                 └── sealed → VerificationGate.evaluate_final (once per run)
+                                                              ↓
+                                                     VerificationReport
+                                                              ↓
+                                              accepted → SandboxState.activate
+                                                              ↓
+                                       PipelineResult → Streamlit / benchmark
+~~~
 
-## Data Flow
+## Split capabilities
 
-```
-[User scenario (text)]
-        │
-        ▼
-  attack_lab.py          ← Gemma 4 (live) or replay fixture
-        │  AttackSpec
-        ▼
-  simulator.py           ← Deterministic Python; NumPy seeded RNG
-        │  dict[split → DataFrame]
-        │   ├─ sample       (2 000 rows)  → failure_analysis, UI evidence
-        │   ├─ validation   (5 000 rows)  → VerificationGate (coarse feedback)
-        │   └─ sealed       (10 000 rows) → VerificationGate ONLY (one-shot)
-        ▼
-  baseline.py            ← Rule-based baseline detector
-        │  BaselineDetector
-        ▼
-  failure_analysis.py    ← Sample split only → Evidence (sample rows)
-        │  Evidence
-        ▼
-  defender_forge.py      ← Gemma 4 proposes DefenseRule
-        │  DefenseRule
-        ▼
-  verification.py        ← Pure Python: validate → (optional retry) → seal
-        │  VerificationReport
-        ▼
-  pipeline.py            ← PipelineResult (no raw sealed/validation rows)
-        │
-        ▼
-  app.py (Streamlit)     ← Display only; reads PipelineResult
-```
+| Split | Default rows | Consumer | Model visibility |
+|---|---:|---|---|
+| sample | 2,000 | failure analysis | permitted features and aggregates only |
+| validation | 5,000 | gate validation method | coarse buckets only, ≤2 evaluations |
+| sealed | 10,000 | gate final method | never |
 
----
+SimulationBoundary holds frames privately. Model/UI code receives Evidence and count
+metadata, never a DataFrame. Validation receives only the validation capability. Final
+receives the sealed capability without the pipeline inspecting its contents. Independent
+reference frames are generated and consumed inside the gate's final method too.
+The boundary protects application interfaces; it is not a Python process isolation mechanism.
 
-## Split Rules
+## Proposal and retry contracts
 
-| Split      | Rows   | Who reads it                      | Visible to model? |
-|------------|--------|-----------------------------------|-------------------|
-| sample     | 2 000  | failure_analysis, UI, baseline     | Yes (Evidence)    |
-| validation | 5 000  | VerificationGate only (coarse)     | No (coarse only)  |
-| sealed     | 10 000 | VerificationGate.evaluate_final    | **Never**         |
+Attack input is normalized and bounded to 600 characters. Scenario/evidence strings are
+framed as untrusted data. AttackSpec and DefenseRule revalidate all permitted fields,
+operators, categories and numeric bounds. Forge validates nested sample records and
+numeric aggregate summaries before model access. Model output never becomes code.
 
-Sealed data is consumed **one time only**; never re-evaluated for tuning.
+Each generate_json invocation allows at most three actual API requests, including format
+repair, model fallback and transient retry. Capability probes are explicit/cached and separate.
+Unprobed function calling remains unknown. AttackSpec uses prompt JSON; a native schema
+is used only when supported and suitable. Invalid model output is a typed error.
 
----
+A run requests one initial proposal and at most one validation-feedback revision, only for
+no gain, global FPR excess, or segment violation. The final method is called once after
+all proposal work. No sealed result is ever sent to the proposer. API failure propagates;
+replay requires a user-controlled mode switch. Replay spec and rule share an explicit preset.
 
-## Module Table
+## Gate and sandbox
 
-| Module              | Phase | Responsibility                                      |
-|---------------------|-------|-----------------------------------------------------|
-| `config.py`         | 1     | Frozen Settings; SecretStr for API key              |
-| `schemas.py`        | 1     | All cross-phase Pydantic contracts                  |
-| `simulator.py`      | 2     | Synthetic data generation (seeded)                  |
-| `baseline.py`       | 2     | Deterministic rule-based baseline detector          |
-| `rule_engine.py`    | 2     | Apply DefenseRule; combine with baseline (OR)       |
-| `metrics.py`        | 2     | compute_metrics, segment_fpr                        |
-| `failure_analysis.py` | 2  | Build Evidence from sample split                    |
-| `gemma_client.py`   | 3     | google-genai wrapper; structured JSON generation    |
-| `attack_lab.py`     | 3     | Scenario → AttackSpec (live or replay)              |
-| `defender_forge.py` | 3     | Evidence → DefenseRule (live or replay)             |
-| `replay.py`         | 3     | Load pre-recorded scenarios from data/replay/       |
-| `verification.py`   | 4     | Validation + sealed gate; pure Python               |
-| `pipeline.py`       | 5     | End-to-end orchestration; PipelineResult dataclass  |
-| `app.py`            | 5     | Streamlit dashboard                                 |
+The gate owns a fresh run id, a validation counter, and a consumed-final state. Finalization
+is marked before evaluation, preventing repeated final checks even with a changed rule.
+Invalid rules return a rejection without reading the sealed split.
 
----
+Checks are validity, complexity, elementwise original/current flag preservation, marginal
+target recall gain, cumulative global FPR, cumulative segment FPR, and regression on two
+built-in reference attacks plus session-approved attacks. Thin segments are listed as
+insufficient data. Missing target positives or legitimate evidence cannot pass.
 
-## Invariants (Binding for All Phases)
+Report baseline = detector before candidate (original baseline plus active accepted patches).
+Report patched = that cumulative detector plus candidate. Additional aggregate fields preserve
+original-baseline and candidate-only comparisons. Activation binds an accepted report to the
+candidate fingerprint and exact preceding active-rule fingerprints; rejected/stale/reused
+reports are rejected. Active-rule snapshots are deep copies. The sandbox is session memory.
 
-1. **Sealed-split gate boundary**: `sealed` rows are only consumed inside
-   `VerificationGate.evaluate_final`.  The pipeline passes the sealed
-   DataFrame opaquely; it must not inspect sealed metrics itself.
+## Backward-compatible schema additions
 
-2. **No model grading its own rule**: Gemma proposes a rule; a separate
-   deterministic Python gate verifies it.  The model never sees validation
-   or sealed metrics.
+VerificationReport retains its original required fields and adds optional target recall/count,
+original-baseline metrics, candidate-only metrics, segment summaries, run id, candidate hash
+and active-rule hashes. RunTelemetry adds optional replay_scenario and replay_match fields.
+PipelineResult adds scenario/seed/run id, coarse feedback, stage timing, step telemetry,
+revision count and active-rule count. Its JSON export explicitly excludes Settings and raw data.
 
-3. **Declarative rules only**: `DefenseRule` clauses are evaluated by
-   `rule_engine.apply_rule` using pure Python comparisons.  No `eval`,
-   `exec`, SQL, or shell calls are ever used.
+## Determinism and feasibility
 
-4. **Monotonic patch**: `combine(baseline, rule)` is logical OR only.  The
-   patched detector can only flag *more* transactions than the baseline —
-   never fewer.
+Simulator split roots are seed, seed+1 and seed+2; independent child streams and stable
+row/index ordering make repeated inputs deterministic. Merchant categories use fixed
+proportions stratified across burst/ordinary traffic, apportioned by largest remainder and
+seeded shuffling. This integration correction retains legitimate burst look-alikes without
+consulting flags, evaluation metrics or split identity. Detector and budgets were unchanged.
+A baseline above any budget cannot be repaired by adding flags and is rejected.
 
-5. **Every metric from simulator output**: No hardcoded PPT numbers; all
-   recall, precision, and FPR values are computed from the simulator's
-   synthetic data.
+Gain is target recall difference *100 percentage points. Global FPR is FP/(FP+TN) on
+legitimate rows and flags per 10k = FPR*10000. Default settings: minimum gain 5 pp, global
+ceiling .015, segment budget .03, minimum segment count 50, maximum clauses 3, one revision.
+These are project choices. Report metrics and verdict are deterministic; latency and run id vary.
 
-6. **Secrets never logged**: `Settings.api_key` is a `SecretStr`; its value
-   is never written to logs, repr output, or UI components.
+## Modules
 
-7. **No network at import time**: `GemmaClient` is only instantiated at
-   runtime.  All modules import cleanly without side-effects.
+| Module | Responsibility |
+|---|---|
+| config, schemas | settings, secrets and typed contracts |
+| simulator | deterministic synthetic transaction generation |
+| baseline, rule_engine, metrics | fixed rules, safe comparisons, computed counts/rates |
+| failure_analysis | sample-only evidence |
+| gemma_client, attack_lab, defender_forge | bounded live proposals and input guards |
+| replay | deterministic fixture matching and validation |
+| verification | coarse validation, one-shot final checks, sandbox state |
+| pipeline | single orchestrator and aggregate-only result |
+| ui_components, app.py | safe rendering and session interaction |
+| benchmarks/run_benchmark.py | headless runner through the same pipeline |
 
-8. **One-shot sealed evaluation**: A final candidate receives exactly one
-   sealed evaluation.  Fresh held-out seeds/datasets are required for new
-   development cycles.
-
-9. **Sample-only evidence in UI**: `PipelineResult.evidence` contains only
-   sample-split rows.  `PipelineResult` never includes raw validation or
-   sealed DataFrames.
-
-10. **Live vs replay clearly labelled**: `RunTelemetry.mode` always reflects
-    which path was taken; the UI displays this prominently.
-
----
-
-## Configuration Thresholds (Configurable, Not Industry Standards)
-
-| Setting                  | Default | Meaning                                      |
-|--------------------------|---------|----------------------------------------------|
-| `global_fpr_ceiling`     | 0.015   | Maximum allowed FPR on the full dataset      |
-| `min_recall_gain_pp`     | 5.0 pp  | Minimum marginal recall gain (percentage pts)|
-| `segment_fpr_budget`     | 0.03    | Per-segment FPR ceiling                      |
-| `max_clauses`            | 3       | Maximum AND-clauses in a DefenseRule         |
-| `max_validation_retries` | 1       | One optional retry after initial validation  |
-| `min_segment_legit_count`| 50      | Minimum legitimate rows for segment FPR test |
-
-> These are **MVP implementation choices**, not validated industry standards.
-> The `min_recall_gain_pp=5.0` threshold is the configurable gate; the PPT's
-> ≥+25% example is illustrative and uses different units.
-
-## Phase 4 additions
-
-VerificationReport adds backward-compatible optional aggregate target recall, original
-baseline, candidate-only metrics, segment summaries, run identifier, and candidate/active-rule
-fingerprints. Existing required fields retain their names. Report baseline means the current
-cumulative detector before the candidate; patched means cumulative detector plus candidate.
-SandboxState binds activation to this candidate and the exact preexisting active-rule list.
-A run is finalized before sealed access, and further feedback or final evaluation is refused.
-Merchant generation uses stratified category counts across burst/ordinary groups; no thresholds
-or baseline rules were changed to satisfy the new segment checks.
+The one-shot registry is in memory per run, not persistent across processes. Deterministic
+rehearsals intentionally reuse seeds; fresh held-out seeds are required after development
+has learned from sealed results. All data is synthetic; this is not a production fraud detector.
