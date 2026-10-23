@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 import math
 from typing import Any, Literal
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # ---------------------------------------------------------------------------
@@ -413,6 +413,15 @@ class VerificationReport(BaseModel):
     legit_flagged_per_10k: float
     sealed_evaluated: bool
     latency_ms: float
+    target_baseline_recall: float = 0.0
+    target_patched_recall: float = 0.0
+    target_fraud_count: int = 0
+    original_baseline: MetricSet | None = None
+    candidate_only: MetricSet | None = None
+    segment_results: list[dict] = Field(default_factory=list)
+    run_id: str = ""
+    rule_fingerprint: str = ""
+    active_rule_fingerprints: list[str] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------

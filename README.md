@@ -142,3 +142,27 @@ available and record it here if different.
 ## License
 
 Apache-2.0 — see [`LICENSE`](LICENSE).
+
+## Verification gate (Phase 4)
+
+Target recall is TP/(TP+FN) on fraud with the current attack name. Gain is
+(patched target recall - current sandbox target recall) * 100 **percentage points**.
+Global FPR is FP/(FP+TN) on legitimate rows; legitimate flags per 10,000 equal FPR*10000.
+Defaults: gain >=5 pp, global FPR <=1.5%, segment FPR <=3%, segments need >=50 legitimate rows.
+These are configurable project choices, not industry standards. All seven checks must pass.
+Validation returns only coarse buckets, at most twice; final evaluation is one-shot per run.
+Cumulative sandbox rules must retain recall and global/segment budgets on two built-in
+reference scenarios and previously approved scenarios. Reports expose aggregate results only.
+
+The legitimate simulator stratifies the fixed merchant mix across burst and ordinary traffic
+using largest-remainder counts and seeded shuffling. This corrects rare-segment sampling
+variance found during gate integration; it preserves the burst distribution and legitimate
+look-alikes. It never consults detector flags or evaluation results during generation.
+The detector and gate budgets were unchanged. A baseline already over budget is rejected,
+since an OR-only patch cannot repair false positives. Synthetic acceptance is not real-world validation.
+
+Run the computed offline benchmark:
+
+```powershell
+.venv\Scripts\python.exe benchmarks/run_benchmark.py --mode replay --seed 1337 --scenarios all
+```

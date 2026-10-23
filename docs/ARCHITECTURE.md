@@ -131,3 +131,14 @@ Sealed data is consumed **one time only**; never re-evaluated for tuning.
 > These are **MVP implementation choices**, not validated industry standards.
 > The `min_recall_gain_pp=5.0` threshold is the configurable gate; the PPT's
 > ≥+25% example is illustrative and uses different units.
+
+## Phase 4 additions
+
+VerificationReport adds backward-compatible optional aggregate target recall, original
+baseline, candidate-only metrics, segment summaries, run identifier, and candidate/active-rule
+fingerprints. Existing required fields retain their names. Report baseline means the current
+cumulative detector before the candidate; patched means cumulative detector plus candidate.
+SandboxState binds activation to this candidate and the exact preexisting active-rule list.
+A run is finalized before sealed access, and further feedback or final evaluation is refused.
+Merchant generation uses stratified category counts across burst/ordinary groups; no thresholds
+or baseline rules were changed to satisfy the new segment checks.

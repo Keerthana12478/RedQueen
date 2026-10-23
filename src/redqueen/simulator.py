@@ -54,6 +54,27 @@ def _typed_features(data: dict | pd.DataFrame) -> pd.DataFrame:
     })
 
 
+def _merchant_categories(rng, bursts):
+    """Stratify the fixed category mix across burst/ordinary traffic.
+
+    Largest-remainder counts preserve the design proportions within each
+    stratum. Assignments are shuffled independently of other features. This
+    reduces rare-segment sampling variance without consulting detector flags,
+    labels, evaluation splits or measured outcomes.
+    """
+    categories = np.array(["grocery", "dining", "utilities", "electronics", "travel",
+                           "peer_transfer", "gift_card", "crypto"], dtype=object)
+    weights = np.array([.28, .24, .20, .10, .07, .08, .02, .01])
+    result = np.empty(len(bursts), dtype=object)
+    for mask in (bursts, ~bursts):
+        expected = weights * int(mask.sum())
+        counts = np.floor(expected).astype(int)
+        remainder = int(mask.sum()) - int(counts.sum())
+        counts[np.argsort(-(expected-counts), kind="stable")[:remainder]] += 1
+        result[mask] = rng.permutation(np.repeat(categories, counts))
+    return result
+
+
 def generate_legit_background(n: int, seed: int) -> pd.DataFrame:
     """Generate n legitimate feature rows plus is_fraud / attack_name labels.
 
@@ -83,11 +104,7 @@ def generate_legit_background(n: int, seed: int) -> pd.DataFrame:
         "is_new_device": (rng.random(n) < 0.05).astype("int64"),
         "geo_mismatch": (rng.random(n) < 0.03).astype("int64"),
         "amount_ratio_to_avg": rng.lognormal(0.0, 0.65, n).clip(0, 100),
-        "merchant_category": rng.choice(
-            ["grocery", "dining", "utilities", "electronics", "travel",
-             "peer_transfer", "gift_card", "crypto"],
-            n, p=[0.28, 0.24, 0.20, 0.10, 0.07, 0.08, 0.02, 0.01],
-        ),
+        "merchant_category": _merchant_categories(rng, bursts),
         "channel": rng.choice(["web", "mobile", "pos", "atm"], n,
                               p=[0.25, 0.40, 0.30, 0.05]),
     })
