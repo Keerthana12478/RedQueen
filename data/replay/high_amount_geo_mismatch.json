@@ -1,0 +1,72 @@
+{
+  "name": "HighAmountGeoMismatch",
+  "label": "REPLAY",
+  "scenario_text": "Large transactions ($3000-$15000) across electronics, travel, crypto and peer transfers, with geo mismatches and moderate velocity across all hours.",
+  "attack_spec": {
+    "name": "HighAmountGeoMismatch",
+    "description": "Large amounts across all merchants with geo mismatch, broad timing.",
+    "target_merchant_categories": [
+      "electronics",
+      "travel",
+      "crypto",
+      "peer_transfer"
+    ],
+    "amount_range": [
+      3000,
+      15000
+    ],
+    "hour_window": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23
+    ],
+    "velocity_1h_range": [
+      1,
+      8
+    ],
+    "account_age_range": [
+      0,
+      1000
+    ],
+    "ip_age_range": [
+      0,
+      365
+    ],
+    "new_device_prob": 0.3,
+    "geo_mismatch_prob": 0.7,
+    "fraud_fraction": 0.1,
+    "evasion_overlap": 0.3
+  },
+  "proposed_rule": {
+    "clauses": [
+      {
+        "field": "geo_mismatch",
+        "op": "==",
+        "val": 1
+      }
+    ],
+    "action": "FLAG",
+    "rationale": "Flags transactions with a geographic mismatch; this broad heuristic also affects legitimate travellers."
+  }
+}

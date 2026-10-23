@@ -1,0 +1,58 @@
+{
+  "name": "GiftCardNightBurst",
+  "label": "REPLAY",
+  "scenario_text": "Fraudsters execute gift-card purchases near $450 between 2 and 4 AM using fresh IPs (under 3 days old) and high transaction velocity (6-14 per hour). Most use a new device and some have geo mismatches. Accounts are 5-180 days old. Evasion: 20% of fraud rows blend toward normal behaviour.",
+  "attack_spec": {
+    "name": "GiftCardNightBurst",
+    "description": "Gift-card transfers near $450 at 2-4 AM, with high velocity and young IPs.",
+    "target_merchant_categories": [
+      "gift_card"
+    ],
+    "amount_range": [
+      400,
+      500
+    ],
+    "hour_window": [
+      2,
+      3,
+      4
+    ],
+    "velocity_1h_range": [
+      6,
+      14
+    ],
+    "account_age_range": [
+      5,
+      180
+    ],
+    "ip_age_range": [
+      0,
+      3
+    ],
+    "new_device_prob": 0.75,
+    "geo_mismatch_prob": 0.35,
+    "fraud_fraction": 0.08,
+    "evasion_overlap": 0.2
+  },
+  "proposed_rule": {
+    "clauses": [
+      {
+        "field": "merchant_category",
+        "op": "==",
+        "val": "gift_card"
+      },
+      {
+        "field": "hour_of_day",
+        "op": "<=",
+        "val": 4
+      },
+      {
+        "field": "velocity_1h",
+        "op": ">=",
+        "val": 6
+      }
+    ],
+    "action": "FLAG",
+    "rationale": "Flags gift-card purchases made between midnight and 4 AM with high velocity (>=6/h). These three conditions together isolate the night-burst pattern while avoiding daytime gift-card purchases which are mostly legitimate."
+  }
+}

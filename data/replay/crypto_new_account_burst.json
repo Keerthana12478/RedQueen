@@ -1,0 +1,55 @@
+{
+  "name": "CryptoNewAccountBurst",
+  "label": "REPLAY",
+  "scenario_text": "New accounts (0-7 days old) make small crypto purchases ($50-$300) at business hours with moderately elevated velocity (3-10/h). 60% use new devices, 20% have geo mismatches. Evasion: 15% blend toward legitimate behaviour.",
+  "attack_spec": {
+    "name": "CryptoNewAccountBurst",
+    "description": "Small crypto purchases from brand-new accounts during business hours.",
+    "target_merchant_categories": [
+      "crypto"
+    ],
+    "amount_range": [
+      50,
+      300
+    ],
+    "hour_window": [
+      9,
+      10,
+      11,
+      14,
+      15
+    ],
+    "velocity_1h_range": [
+      3,
+      10
+    ],
+    "account_age_range": [
+      0,
+      7
+    ],
+    "ip_age_range": [
+      0,
+      14
+    ],
+    "new_device_prob": 0.6,
+    "geo_mismatch_prob": 0.2,
+    "fraud_fraction": 0.06,
+    "evasion_overlap": 0.15
+  },
+  "proposed_rule": {
+    "clauses": [
+      {
+        "field": "merchant_category",
+        "op": "==",
+        "val": "crypto"
+      },
+      {
+        "field": "account_age_days",
+        "op": "<",
+        "val": 365
+      }
+    ],
+    "action": "FLAG",
+    "rationale": "Targets crypto transactions on accounts younger than one year; legitimate customers in this segment may also be affected."
+  }
+}

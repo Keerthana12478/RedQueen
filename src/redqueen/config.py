@@ -7,13 +7,14 @@ logged — repr/str deliberately hide it.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Literal
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, SecretStr
 
 # Load .env if present; never overrides already-set environment variables.
-load_dotenv(override=False)
+load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=False)
 
 
 def _env(key: str, default: str = "") -> str:

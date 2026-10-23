@@ -11,6 +11,7 @@ additions require a documented, backward-compatible change.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
 from typing import Any, Literal
 
 from pydantic import BaseModel, field_validator, model_validator
@@ -129,6 +130,8 @@ class Clause(BaseModel):
                     f"Field {field_name!r} expects numeric value, got {type(val).__name__}"
                 )
             val_f = float(val)
+            if not math.isfinite(val_f):
+                raise ValueError("Numeric rule values must be finite")
             if spec.min is not None and val_f < spec.min:
                 raise ValueError(
                     f"Value {val} below minimum {spec.min} for field {field_name!r}"
@@ -166,6 +169,8 @@ class DefenseRule(BaseModel):
         if isinstance(data, dict):
             # Detect shorthand: has 'field', 'op', 'val' at top level but no 'clauses'
             if "clauses" not in data and "field" in data and "op" in data and "val" in data:
+                if set(data) - {"field", "op", "val", "action", "rationale"}:
+                    raise ValueError("Unknown shorthand rule keys")
                 clause_data = {
                     "field": data["field"],
                     "op": data["op"],
@@ -214,6 +219,16 @@ class AttackSpec(BaseModel):
     geo_mismatch_prob: float
     fraud_fraction: float
     evasion_overlap: float
+
+    @model_validator(mode="after")
+    def _usable_spec(self) -> "AttackSpec":
+        if not self.name.strip() or self.name in {"none", "background"}:
+            raise ValueError("Attack requires a non-reserved name")
+        if not self.hour_window or not self.target_merchant_categories:
+            raise ValueError("Attack hours and categories must be non-empty")
+        if not all(math.isfinite(v) for v in self.amount_range):
+            raise ValueError("Attack amounts must be finite")
+        return self
 
     @field_validator("target_merchant_categories")
     @classmethod
@@ -411,6 +426,8 @@ class RunTelemetry(BaseModel):
 
     mode: Literal["live", "replay"]
     model_used: str | None
-    model_latency_ms: float
+    model_latency_ms: float | None
     verification_latency_ms: float
     attempts: int
+    replay_scenario: str | None = None
+    replay_match: Literal["exact", "closest"] | None = None
